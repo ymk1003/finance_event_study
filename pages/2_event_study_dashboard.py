@@ -27,7 +27,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# Load company metadata from CSV
+# Load company metadata
 @st.cache_data
 def load_company_info():
     return pd.read_csv("company_info.csv")
@@ -123,7 +123,8 @@ if analyze or st.session_state.get("run_analysis", False):
         col2.metric("📈 1-Day Change", f"{daily_change:.2f}%")
 
         st.markdown("### 📈 1-Month Price Trend")
-        price_trend = stock_data.loc[end_date - pd.Timedelta(days=30):]
+        last_date = stock_data.index.max()
+        price_trend = stock_data.loc[last_date - pd.Timedelta(days=30): last_date]
         if not price_trend.empty:
             st.line_chart(price_trend["price"])
         else:
