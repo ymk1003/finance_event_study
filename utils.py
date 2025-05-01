@@ -7,28 +7,42 @@ Original file is located at
     https://colab.research.google.com/drive/1DV0mIHC1To4-qFDsj7tBQGZMb5rvUsy0
 """
 
-# utils.py - Using local dummy CSV in root folder
+# utils.py - Updated to use dummy CSV file instead of yfinance, mimicking original behavior
 
 import pandas as pd
 import numpy as np
 from scipy import stats
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
+import os
 
 
 def load_stock_data(ticker, start_date, end_date, file_path='dummy_stock_prices_2024_to_2025.csv'):
     """
-    Load stock price data for a given ticker and date range from local CSV.
+    Mimics yfinance download using local dummy CSV. Returns price column with correct naming.
     """
-    df = pd.read_csv(file_path, parse_dates=['date'])
-    df = df[df['ticker'] == ticker].copy()
-    df = df.set_index('date')
-    df = df.loc[start_date:end_date]
+    stock = pd.read_csv(file_path, parse_dates=['date'])
 
-    if df.empty:
-        raise ValueError(f"No data for {ticker} between {start_date} and {end_date}")
+    # Filter by ticker
+    stock = stock[stock['ticker'] == ticker].copy()
 
-    return df[['price']]
+    if stock.empty:
+        raise ValueError(f"No stock data found for {ticker} between {start_date} and {end_date}. Check ticker or CSV file.")
+
+    # Rename 'price' column to mimic yfinance 'Adj Close'
+    if 'price' in stock.columns:
+        stock = stock[['date', 'price']]
+        stock.set_index('date', inplace=True)
+    else:
+        raise ValueError(f"No usable price column found for {ticker}. Available columns: {stock.columns.tolist()}")
+
+    # Filter by date
+    stock = stock.loc[start_date:end_date]
+
+    if stock.empty:
+        raise ValueError(f"No stock data for {ticker} in the date range {start_date} to {end_date}.")
+
+    return stock
 
 
 def load_market_data(start_date, end_date, file_path='dummy_stock_prices_2024_to_2025.csv'):
