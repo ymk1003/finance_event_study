@@ -9,3 +9,5 @@ feedparser
 vaderSentiment
 nltk
 scikit-learn
+pandas_datareader
+
