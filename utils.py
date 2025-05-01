@@ -7,58 +7,39 @@ Original file is located at
     https://colab.research.google.com/drive/1DV0mIHC1To4-qFDsj7tBQGZMb5rvUsy0
 """
 
-# utils.py
+# utils.py - Using local dummy CSV in root folder
 
 import pandas as pd
 import numpy as np
-import yfinance as yf
 from scipy import stats
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
 
 
-def load_stock_data(ticker, start_date, end_date):
-    stock = yf.download(ticker, start=start_date, end=end_date)
+def load_stock_data(ticker, start_date, end_date, file_path='dummy_stock_prices_2024_to_2025.csv'):
+    """
+    Load stock price data for a given ticker and date range from local CSV.
+    """
+    df = pd.read_csv(file_path, parse_dates=['date'])
+    df = df[df['ticker'] == ticker].copy()
+    df = df.set_index('date')
+    df = df.loc[start_date:end_date]
 
-    if stock.empty:
-        raise ValueError(f"No stock data found for {ticker} between {start_date} and {end_date}. Check ticker symbol or date.")
+    if df.empty:
+        raise ValueError(f"No data for {ticker} between {start_date} and {end_date}")
 
-    # Flatten columns if multiindex
-    if isinstance(stock.columns, pd.MultiIndex):
-        stock.columns = [col[0] for col in stock.columns]
-
-    # Prefer Adj Close if available, else fallback to Close
-    if 'Adj Close' in stock.columns:
-        stock = stock[['Adj Close']]
-        stock.rename(columns={'Adj Close': 'price'}, inplace=True)
-    elif 'Close' in stock.columns:
-        stock = stock[['Close']]
-        stock.rename(columns={'Close': 'price'}, inplace=True)
-    else:
-        raise ValueError(f"No usable Close prices found for {ticker}. Available columns: {stock.columns.tolist()}")
-
-    return stock
+    return df[['price']]
 
 
-def load_market_data(start_date, end_date):
-    market = yf.download('^GSPC', start=start_date, end=end_date)
-
-    if market.empty:
-        raise ValueError(f"No market data found between {start_date} and {end_date}.")
-
-    # Flatten columns if multiindex
-    if isinstance(market.columns, pd.MultiIndex):
-        market.columns = [col[0] for col in market.columns]
-
-    if 'Adj Close' in market.columns:
-        market = market[['Adj Close']]
-        market.rename(columns={'Adj Close': 'market_price'}, inplace=True)
-    elif 'Close' in market.columns:
-        market = market[['Close']]
-        market.rename(columns={'Close': 'market_price'}, inplace=True)
-    else:
-        raise ValueError(f"No usable Close prices found for market data. Available columns: {market.columns.tolist()}")
-
+def load_market_data(start_date, end_date, file_path='dummy_stock_prices_2024_to_2025.csv'):
+    """
+    Simulate market index using average of all stock prices.
+    """
+    df = pd.read_csv(file_path, parse_dates=['date'])
+    df = df[(df['date'] >= start_date) & (df['date'] <= end_date)]
+    market = df.groupby('date')['price'].mean().reset_index()
+    market = market.set_index('date')
+    market.rename(columns={'price': 'market_price'}, inplace=True)
     return market
 
 
@@ -66,11 +47,9 @@ def calculate_market_model_car(stock_prices, market_prices, event_date, window=6
     merged = pd.merge(stock_prices, market_prices, left_index=True, right_index=True, how='inner')
     merged['stock_return'] = merged['price'].pct_change()
     merged['market_return'] = merged['market_price'].pct_change()
-
     merged = merged.dropna()
 
-    X = merged['market_return']
-    X = sm.add_constant(X)
+    X = sm.add_constant(merged['market_return'])
     y = merged['stock_return']
     model = sm.OLS(y, X).fit()
 
@@ -78,82 +57,22 @@ def calculate_market_model_car(stock_prices, market_prices, event_date, window=6
     merged['abnormal_return'] = merged['stock_return'] - merged['expected_return']
 
     nearest_idx = merged.index.get_indexer([event_date], method='nearest')[0]
-    start_idx = max(nearest_idx - window//2, 0)
-    end_idx = min(nearest_idx + window//2, len(merged))
+    start_idx = max(nearest_idx - window // 2, 0)
+    end_idx = min(nearest_idx + window // 2, len(merged))
     event_window = merged.iloc[start_idx:end_idx].copy()
 
-    # Reset index to relative days
-    event_window['days_from_event'] = range(-len(event_window)//2, len(event_window)//2)
+    event_window['days_from_event'] = range(-len(event_window) // 2, len(event_window) // 2)
     event_window.set_index('days_from_event', inplace=True)
-
     event_window['CAR'] = event_window['abnormal_return'].cumsum()
 
     return event_window[['stock_return', 'expected_return', 'abnormal_return', 'CAR']]
 
-def calculate_fama_french_car(stock_prices, event_date, window=60):
-    import pandas_datareader.data as web
-    import datetime
-
-    if stock_prices.empty:
-        raise ValueError("Stock prices not available for selected date range.")
-
-    # Download Fama French 3 Factors
-    ff_data = web.DataReader('F-F_Research_Data_Factors', 'famafrench', start=datetime.datetime(1926, 1, 1))[0]
-
-    # Fix PeriodIndex
-    ff_data.index = ff_data.index.to_timestamp()
-
-    # 🧠 Resample to daily and ffill
-    ff_data = ff_data.resample('D').ffill()
-
-    stock = stock_prices.copy()
-    stock['stock_return'] = stock['price'].pct_change()
-
-    # 🛠 Merge using OUTER JOIN then ffill missing
-    merged = pd.merge(stock, ff_data, left_index=True, right_index=True, how='outer')
-    merged = merged.ffill()
-
-    # After ffill, now safely drop NaNs
-    merged = merged.dropna()
-
-    if merged.empty:
-        raise ValueError("Merged data is empty after outer join and ffill.")
-
-    X = merged[['Mkt-RF', 'SMB', 'HML']]
-    X = sm.add_constant(X)
-    y = merged['stock_return'] - merged['RF']
-
-    model = sm.OLS(y, X).fit()
-
-    merged['expected_return'] = model.predict(X) + merged['RF']
-    merged['abnormal_return'] = merged['stock_return'] - merged['expected_return']
-
-    nearest_idx = merged.index.get_indexer([event_date], method='nearest')[0]
-    start_idx = max(nearest_idx - window//2, 0)
-    end_idx = min(nearest_idx + window//2, len(merged))
-    event_window = merged.iloc[start_idx:end_idx].copy()
-
-    event_window['days_from_event'] = range(-len(event_window)//2, len(event_window)//2)
-    event_window.set_index('days_from_event', inplace=True)
-
-    event_window['CAR'] = event_window['abnormal_return'].cumsum()
-
-    return event_window[['stock_return', 'expected_return', 'abnormal_return', 'CAR']]
 
 def plot_car_graph(results):
     fig, ax = plt.subplots(figsize=(8, 5))
+    jump = results['abnormal_return'].cumsum().iloc[-1] * 100 if 0 in results.index else 0
 
-    car = []
-    jump = 0
-    if 0 in results.index:
-        jump = results['abnormal_return'].cumsum().iloc[-1] * 100  # FINAL FINAL FINAL
-
-    for day in results.index:
-        if day < 0:
-            car.append(0)
-        else:
-            car.append(jump)
-
+    car = [0 if day < 0 else jump for day in results.index]
     ax.plot(results.index, car, color='blue', linewidth=2)
     ax.axhline(0, color='black')
     ax.axvline(0, color='black', linestyle='--')
@@ -161,11 +80,8 @@ def plot_car_graph(results):
     ax.set_title('Mean CAR Graph', fontsize=16, color='red')
     ax.set_ylabel('% CAR')
     ax.set_xlabel('Days Relative to Event')
-    ax.set_ylim(min(-5, jump - 1), max(5, jump + 1))  # View nicely centered
+    ax.set_ylim(min(-5, jump - 1), max(5, jump + 1))
     return fig
-
-
-
 
 
 def plot_ci_graph(results):
@@ -176,18 +92,17 @@ def plot_ci_graph(results):
 
     ci_upper = mean + 1.96 * se
     ci_lower = mean - 1.96 * se
+    x_range = range(-len(mean) // 2, len(mean) // 2)
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(range(-len(mean)//2, len(mean)//2), mean, color='purple', label='Mean')
-    ax.plot(range(-len(mean)//2, len(mean)//2), ci_upper, linestyle='dotted', color='purple', label='Mean + 1.96SE')
-    ax.plot(range(-len(mean)//2, len(mean)//2), ci_lower, linestyle='dotted', color='purple', label='Mean - 1.96SE')
+    ax.plot(x_range, mean, color='purple', label='Mean')
+    ax.plot(x_range, ci_upper, linestyle='dotted', color='purple', label='Mean + 1.96SE')
+    ax.plot(x_range, ci_lower, linestyle='dotted', color='purple', label='Mean - 1.96SE')
 
     ax.axhline(0, color='black', linestyle='--')
-    ax.axvline(0, color='black', linestyle='--')  # Event Day
-
+    ax.axvline(0, color='black', linestyle='--')
     ax.set_title('Cumulative Average Abnormal Return and 95% Confidence Limits', fontsize=16, color='red')
     ax.set_xlabel('Day Relative to Event')
     ax.set_ylabel('Return')
-
     ax.legend()
     return fig
