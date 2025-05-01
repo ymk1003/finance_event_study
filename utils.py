@@ -80,6 +80,50 @@ def calculate_market_model_car(stock_prices, market_prices, event_date, window=6
     event_window['CAR'] = event_window['abnormal_return'].cumsum()
 
     return event_window[['stock_return', 'expected_return', 'abnormal_return', 'CAR']]
+    
+def calculate_fama_french_car(stock_prices, event_date, window=60):
+    import pandas_datareader.data as web
+    import datetime
+
+    if stock_prices.empty:
+        raise ValueError("Stock prices not available for selected date range.")
+
+    # Download Fama French 3 Factors
+    ff_data = web.DataReader('F-F_Research_Data_Factors', 'famafrench', start=datetime.datetime(1926, 1, 1))[0]
+
+    # Convert to daily
+    ff_data.index = ff_data.index.to_timestamp()
+    ff_data = ff_data.resample('D').ffill()
+
+    stock = stock_prices.copy()
+    stock['stock_return'] = stock['price'].pct_change()
+
+    # Merge with factors
+    merged = pd.merge(stock, ff_data, left_index=True, right_index=True, how='outer').ffill().dropna()
+
+    if merged.empty:
+        raise ValueError("Merged data is empty after merge and forward-fill.")
+
+    X = merged[['Mkt-RF', 'SMB', 'HML']]
+    X = sm.add_constant(X)
+    y = merged['stock_return'] - merged['RF']
+
+    model = sm.OLS(y, X).fit()
+
+    merged['expected_return'] = model.predict(X) + merged['RF']
+    merged['abnormal_return'] = merged['stock_return'] - merged['expected_return']
+
+    nearest_idx = merged.index.get_indexer([event_date], method='nearest')[0]
+    start_idx = max(nearest_idx - window // 2, 0)
+    end_idx = min(nearest_idx + window // 2, len(merged))
+    event_window = merged.iloc[start_idx:end_idx].copy()
+
+    event_window['days_from_event'] = range(-len(event_window) // 2, len(event_window) // 2)
+    event_window.set_index('days_from_event', inplace=True)
+    event_window['CAR'] = event_window['abnormal_return'].cumsum()
+
+    return event_window[['stock_return', 'expected_return', 'abnormal_return', 'CAR']]
+
 
 
 def plot_car_graph(results):
