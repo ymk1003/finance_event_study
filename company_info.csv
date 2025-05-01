@@ -1,0 +1,21 @@
+ticker,company_name,sector,industry,market_cap,pe_ratio,dividend_yield
+GM,General Motors,Auto,Automotive,500000000000,7.5,0.03
+XOM,ExxonMobil,Energy,Oil & Gas,450000000000,9.8,0.044
+CVX,Chevron,Energy,Oil & Gas,300000000000,10.1,0.038
+PFE,Pfizer,Pharma,Biotechnology,250000000000,13.2,0.036
+JNJ,Johnson & Johnson,Pharma,Healthcare,420000000000,17.3,0.029
+JPM,JPMorgan Chase,Banking,Financial Services,380000000000,11.0,0.025
+MS,Morgan Stanley,Banking,Financial Services,180000000000,12.5,0.022
+ABBV,AbbVie,Pharma,Biotechnology,260000000000,14.6,0.043
+BMY,Bristol-Myers Squibb,Pharma,Pharmaceuticals,210000000000,15.8,0.039
+GE,General Electric,Industrial,Conglomerate,140000000000,10.9,0.02
+BA,Boeing,Aerospace,Aerospace & Defense,120000000000,9.3,0.015
+F,Ford,Auto,Automotive,100000000000,8.7,0.02
+WMT,Walmart,Retail,Retail,400000000000,20.0,0.018
+TSM,Taiwan Semiconductor,Tech,Semiconductors,550000000000,26.4,0.005
+MRK,Merck,Pharma,Pharmaceuticals,300000000000,16.5,0.03
+AMZN,Amazon,Retail,E-commerce,1700000000000,40.2,0.0
+INTC,Intel,Tech,Semiconductors,240000000000,14.7,0.012
+AAPL,Apple,Tech,Consumer Electronics,2800000000000,28.3,0.006
+TSLA,Tesla,Auto,EVs,750000000000,35.6,0.0
+NVDA,Nvidia,Tech,Semiconductors,1500000000000,42.8,0.001
