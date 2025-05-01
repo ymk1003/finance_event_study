@@ -10,7 +10,6 @@ Original file is located at
 import streamlit as st
 import pandas as pd
 import os
-import yfinance as yf
 from utils import (
     load_stock_data,
     load_market_data,
@@ -21,20 +20,27 @@ from utils import (
 )
 from event_scraper import get_live_events
 
-# Set Page Config
+# Set page config
 st.set_page_config(
     page_title="Event Study Dashboard",
     page_icon="📈",
     layout="centered"
 )
 
-# Helper to trigger rerun
+# Load company metadata from CSV
+@st.cache_data
+def load_company_info():
+    return pd.read_csv("company_info.csv")
+
+company_info_df = load_company_info()
+
+# Session trigger
 def trigger_analysis():
     st.session_state["run_analysis"] = True
 
 st.title("📈 Event Study Dashboard")
 
-# Load event data from scraper
+# Load event data
 try:
     event_data = get_live_events()
     event_data["event_date"] = pd.to_datetime(event_data["event_date"])
@@ -51,8 +57,6 @@ tickers = sorted(filtered_data["ticker"].unique())
 selected_ticker = st.sidebar.selectbox("Select Ticker", tickers)
 
 event_dates = sorted(filtered_data[filtered_data["ticker"] == selected_ticker]["event_date"].dt.date.unique())
-
-# 🆕 Date input with Calendar
 selected_event_date = st.sidebar.date_input(
     "Select Event Date",
     value=event_dates[0],
@@ -60,7 +64,6 @@ selected_event_date = st.sidebar.date_input(
     max_value=max(event_dates)
 )
 
-# Model selection
 model_choice = st.sidebar.radio(
     "Choose Model",
     ["Market Adjusted Model", "Fama French 3-Factor Model"],
@@ -70,18 +73,18 @@ model_choice = st.sidebar.radio(
 
 analyze = st.sidebar.button("Analyze")
 
-# Main Analysis
+# Main analysis logic
 if analyze or st.session_state.get("run_analysis", False):
     st.subheader(f"Analysis for {selected_ticker} on {selected_event_date}")
 
-    # Show logo
+    # Logo (optional)
     logo_path = f"logos/{selected_ticker}.png"
     if os.path.exists(logo_path):
         st.image(logo_path, width=150)
     else:
         st.warning("Logo not available for this stock.")
 
-    # 🆕 Event Details Card
+    # Event card
     try:
         event_info = filtered_data[
             (filtered_data["ticker"] == selected_ticker) &
@@ -90,59 +93,59 @@ if analyze or st.session_state.get("run_analysis", False):
 
         st.markdown("---")
         st.markdown("### 📰 Event Details")
-        with st.container():
-            st.markdown(f"**🗓️ Date:** {selected_event_date}")
-            st.markdown(f"**🗞️ Headline:** {event_info['headline']}")
-            st.markdown(f"**🏷️ Event Type:** {event_info['news_type']}")
-            sentiment = event_info['sentiment']
-            if sentiment == "Positive":
-                st.success(f"**Sentiment:** {sentiment}")
-            elif sentiment == "Negative":
-                st.error(f"**Sentiment:** {sentiment}")
-            else:
-                st.info(f"**Sentiment:** {sentiment}")
+        st.markdown(f"**🗓️ Date:** {selected_event_date}")
+        st.markdown(f"**🗞️ Headline:** {event_info['headline']}")
+        st.markdown(f"**🏷️ Event Type:** {event_info['news_type']}")
+        sentiment = event_info['sentiment']
+        if sentiment == "Positive":
+            st.success(f"**Sentiment:** {sentiment}")
+        elif sentiment == "Negative":
+            st.error(f"**Sentiment:** {sentiment}")
+        else:
+            st.info(f"**Sentiment:** {sentiment}")
         st.markdown("---")
-
     except Exception as e:
         st.warning(f"Could not load event details: {e}")
 
     # Stock snapshot
     try:
-        ticker_obj = yf.Ticker(selected_ticker)
-        info = ticker_obj.info
+        start_date = pd.to_datetime(selected_event_date) - pd.Timedelta(days=60)
+        end_date = pd.to_datetime(selected_event_date) + pd.Timedelta(days=60)
+
+        stock_data = load_stock_data(selected_ticker, start_date, end_date)
+        recent_price = stock_data['price'].iloc[-1]
+        old_price = stock_data['price'].iloc[-2] if len(stock_data) > 1 else recent_price
+        daily_change = ((recent_price - old_price) / old_price) * 100
 
         st.markdown("### 🏦 Stock Snapshot")
         col1, col2 = st.columns(2)
-        col1.metric("💲 Current Price", f"${info.get('currentPrice', 'N/A')}")
-        col2.metric("📈 1-Day Change", f"{info.get('regularMarketChangePercent', 0):.2f}%")
+        col1.metric("💲 Current Price", f"${recent_price:.2f}")
+        col2.metric("📈 1-Day Change", f"{daily_change:.2f}%")
 
         st.markdown("### 📈 1-Month Price Trend")
-        hist = ticker_obj.history(period="1mo")
-        if not hist.empty:
-            st.line_chart(hist["Close"])
+        price_trend = stock_data.loc[end_date - pd.Timedelta(days=30):]
+        if not price_trend.empty:
+            st.line_chart(price_trend["price"])
         else:
             st.warning("Price history unavailable.")
 
+        company_row = company_info_df[company_info_df["ticker"] == selected_ticker].iloc[0]
+
         col3, col4 = st.columns(2)
         with col3:
-            st.write(f"**Sector:** {info.get('sector', 'N/A')}")
-            st.write(f"**Industry:** {info.get('industry', 'N/A')}")
-            st.write(f"**Market Cap:** ${info.get('marketCap', 'N/A'):,}")
+            st.write(f"**Sector:** {company_row['sector']}")
+            st.write(f"**Industry:** {company_row['industry']}")
+            st.write(f"**Market Cap:** ${int(company_row['market_cap']):,}")
         with col4:
-            st.write(f"**P/E Ratio:** {info.get('trailingPE', 'N/A')}")
-            st.write(f"**Dividend Yield:** {info.get('dividendYield', 'N/A')}")
+            st.write(f"**P/E Ratio:** {company_row['pe_ratio']}")
+            st.write(f"**Dividend Yield:** {company_row['dividend_yield'] * 100:.2f}%")
 
         st.markdown("---")
-
     except Exception as e:
         st.warning(f"Could not load stock snapshot: {e}")
 
-    # Event Study Analysis
-    start_date = pd.to_datetime(selected_event_date) - pd.Timedelta(days=60)
-    end_date = pd.to_datetime(selected_event_date) + pd.Timedelta(days=60)
-
+    # Event Study
     try:
-        stock_data = load_stock_data(selected_ticker, start_date, end_date)
         market_data = load_market_data(start_date, end_date)
 
         if model_choice == "Market Adjusted Model":
@@ -158,7 +161,7 @@ if analyze or st.session_state.get("run_analysis", False):
         st.markdown("### 📊 Event Impact Metrics")
         col5, col6, col7 = st.columns(3)
         col5.metric("📈 Actual Return", f"{actual_return:.2f}%")
-        col6.metric("📉 Expected Return (Normal)", f"{normal_return:.2f}%")
+        col6.metric("📉 Expected Return", f"{normal_return:.2f}%")
         col7.metric("🚀 CAR (Impact)", f"{CAR_final:.2f}%")
 
         st.markdown("---")
