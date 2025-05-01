@@ -1,0 +1,11 @@
+streamlit
+streamlit-extras
+pandas
+numpy
+yfinance==0.2.57 
+matplotlib
+statsmodels
+feedparser
+vaderSentiment
+nltk
+scikit-learn
